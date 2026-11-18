@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 class SyncService:
     """Забирает задачи с Codeforces и записывает их в БД."""
 
-    def __init__(self, client: CodeforcesClient) -> None:
-        self.client = client
+    def __init__(self, client: CodeforcesClient | None = None) -> None:
+        self.client = client or CodeforcesClient()
 
     async def sync(self) -> int:
         """Полная синхронизация в одной транзакции. Возвращает число обработанных задач."""
