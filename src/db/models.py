@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, String, Table, UniqueConstraint, func
+from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Table, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base
@@ -33,7 +33,11 @@ task_tags = Table(
 
 class Task(Base):
     __tablename__ = "tasks"
-    __table_args__ = (UniqueConstraint("cf_contest_id", "index"),)
+    __table_args__ = (
+        UniqueConstraint("cf_contest_id", "index"),
+        # триграммный GIN-индекс ускоряет поиск по названию: name ILIKE '%query%' (нужно расширение pg_trgm)
+        Index("ix_tasks_name_trgm", "name", postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"}),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     cf_contest_id: Mapped[int]

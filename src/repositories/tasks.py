@@ -12,6 +12,11 @@ from schemas import TaskData
 BATCH_SIZE = 1000
 
 
+def escape_like(value: str) -> str:
+    """Экранирует спецсимволы LIKE, чтобы ввод пользователя «100%» искался буквально."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class TaskRepository:
     """Запись задач, тегов и связей между ними. Транзакцией управляет вызывающий код (репозиторий не коммитит)."""
 
@@ -104,6 +109,34 @@ class TaskRepository:
             .order_by(Task.solved_count.desc(), Task.id)
             .limit(limit)
             .with_for_update(of=Task, skip_locked=True)
+            .options(selectinload(Task.tags))
+        )
+        result = await self.session.scalars(stmt)
+        return list(result.all())
+
+    async def get_by_code(self, contest_id: int, index: str) -> Task | None:
+        """Задача по номеру: (1700, "C") -> 1700C. Использует уникальный индекс (cf_contest_id, index)."""
+        stmt = (
+            select(Task).where(Task.cf_contest_id == contest_id, Task.index == index).options(selectinload(Task.tags))
+        )
+        return await self.session.scalar(stmt)
+
+    async def get_by_contest(self, contest_id: int) -> list[Task]:
+        """Все задачи контеста по порядку: 1700A, 1700B, ..."""
+        stmt = (
+            select(Task).where(Task.cf_contest_id == contest_id).order_by(Task.index).options(selectinload(Task.tags))
+        )
+        result = await self.session.scalars(stmt)
+        return list(result.all())
+
+    async def search_by_name(self, query: str, limit: int) -> list[Task]:
+        """Поиск по подстроке в названии без учёта регистра (ILIKE '%query%'), самые решаемые — первыми."""
+        pattern = "%" + escape_like(query) + "%"
+        stmt = (
+            select(Task)
+            .where(Task.name.ilike(pattern, escape="\\"))
+            .order_by(Task.solved_count.desc(), Task.id)
+            .limit(limit)
             .options(selectinload(Task.tags))
         )
         result = await self.session.scalars(stmt)
