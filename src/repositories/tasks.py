@@ -1,8 +1,9 @@
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from db.models import Tag, Task, task_tags
 from schemas import TaskData
@@ -64,3 +65,53 @@ class TaskRepository:
             stmt = insert(task_tags).values(batch)
             stmt = stmt.on_conflict_do_nothing(index_elements=["task_id", "tag_id"])
             await self.session.execute(stmt)
+
+    async def get_free_ratings(self) -> list[int]:
+        """Сложности, по которым есть хотя бы одна свободная задача (selection_id IS NULL)."""
+        stmt = (
+            select(Task.rating)
+            .where(Task.rating.is_not(None), Task.selection_id.is_(None))
+            .distinct()
+            .order_by(Task.rating)
+        )
+        result = await self.session.scalars(stmt)
+        return [rating for rating in result.all() if rating is not None]
+
+    async def get_tags_with_free_tasks(self, rating: int) -> list[tuple[Tag, int]]:
+        """Теги, у которых есть свободные задачи сложности rating, с их количеством (по убыванию)."""
+        free_count = func.count(Task.id).label("free_count")
+        stmt = (
+            select(Tag, free_count)
+            .join(task_tags, task_tags.c.tag_id == Tag.id)
+            .join(Task, Task.id == task_tags.c.task_id)
+            .where(Task.rating == rating, Task.selection_id.is_(None))
+            .group_by(Tag.id)
+            .order_by(free_count.desc(), Tag.name)
+        )
+        result = await self.session.execute(stmt)
+        return [(tag, count) for tag, count in result.tuples().all()]
+
+    async def lock_free_tasks(self, rating: int, tag_id: int, limit: int) -> list[Task]:
+        """Выбирает до limit свободных задач нужной сложности и темы и блокирует их строки до конца транзакции.
+
+        SKIP LOCKED: строки, уже заблокированные параллельной транзакцией (кто-то собирает такую же подборку
+        прямо сейчас), пропускаются — поэтому две подборки никогда не получат одну и ту же задачу.
+        """
+        stmt = (
+            select(Task)
+            .join(task_tags, task_tags.c.task_id == Task.id)
+            .where(task_tags.c.tag_id == tag_id, Task.rating == rating, Task.selection_id.is_(None))
+            .order_by(Task.solved_count.desc(), Task.id)
+            .limit(limit)
+            .with_for_update(of=Task, skip_locked=True)
+            .options(selectinload(Task.tags))
+        )
+        result = await self.session.scalars(stmt)
+        return list(result.all())
+
+    async def assign_selection(self, task_ids: list[int], selection_id: int) -> None:
+        """Помечает задачи как выданные в подборку selection_id."""
+        if not task_ids:
+            return
+        stmt = update(Task).where(Task.id.in_(task_ids)).values(selection_id=selection_id)
+        await self.session.execute(stmt)
