@@ -99,7 +99,7 @@ class TaskRepository:
             .order_by(free_count.desc(), Tag.name)
         )
         result = await self.session.execute(stmt)
-        return [(tag, count) for tag, count in result.tuples().all()]
+        return [(tag, count) for tag, count in result.all()]
 
     async def lock_free_tasks(self, rating: int, tag_id: int, limit: int) -> list[Task]:
         """Выбирает до limit свободных задач нужной сложности и темы и блокирует их строки до конца транзакции.

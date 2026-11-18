@@ -9,14 +9,18 @@ from scheduler.jobs import create_scheduler
 
 logger = logging.getLogger(__name__)
 
+STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM)
 
-async def main() -> None:
-    """Долгоживущий воркер: синхронизирует задачи Codeforces каждые SYNC_IN_MIN минут."""
-    stop_event = asyncio.Event()
+
+async def main(stop_event: asyncio.Event | None = None) -> None:
+    """Долгоживущий воркер: синхронизирует задачи Codeforces каждые SYNC_IN_MIN минут до сигнала остановки."""
+    stop_event = stop_event or asyncio.Event()
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
+    handled_signals = []
+    for sig in STOP_SIGNALS:
         try:
             loop.add_signal_handler(sig, stop_event.set)
+            handled_signals.append(sig)
         except NotImplementedError:
             # Windows: обработчики сигналов в asyncio не поддерживаются, Ctrl+C придёт как KeyboardInterrupt
             pass
@@ -27,6 +31,8 @@ async def main() -> None:
     try:
         await stop_event.wait()
     finally:
+        for sig in handled_signals:
+            loop.remove_signal_handler(sig)
         scheduler.shutdown(wait=False)
         await engine.dispose()
         logger.info("Воркер остановлен")
