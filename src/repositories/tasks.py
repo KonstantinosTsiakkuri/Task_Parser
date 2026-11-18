@@ -40,13 +40,18 @@ class TaskRepository:
             )
             await self.session.execute(stmt)
 
-    async def upsert_tags(self, names: list[str]) -> None:
-        """Записывает теги в БД, уже существующие пропускает."""
+    async def upsert_tags(self, names: list[str], names_ru: dict[str, str] | None = None) -> None:
+        """Записывает теги в БД. У существующих обновляет русское название, если оно известно."""
         if not names:
             return
 
-        stmt = insert(Tag).values([{"name": name} for name in names])
-        stmt = stmt.on_conflict_do_nothing(index_elements=["name"])
+        names_ru = names_ru or {}
+        stmt = insert(Tag).values([{"name": name, "name_ru": names_ru.get(name)} for name in names])
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["name"],
+            # новый тег без перевода не затирает перевод, заданный раньше
+            set_={"name_ru": func.coalesce(stmt.excluded.name_ru, Tag.name_ru)},
+        )
         await self.session.execute(stmt)
 
     async def link_tags(self, tasks: list[TaskData]) -> None:
