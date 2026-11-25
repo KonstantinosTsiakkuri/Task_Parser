@@ -1,12 +1,13 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
+
 from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 env_path = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file_encoding="utf-8", extra="ignore", env_file= env_path)
+    model_config = SettingsConfigDict(env_file_encoding="utf-8", extra="ignore", env_file=env_path)
     BOT_TOKEN: SecretStr
     DB_NAME: str
     DB_USER: str
@@ -21,11 +22,13 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        return (f"postgresql+asyncpg://"
-                f"{self.DB_USER}:"
-                f"{self.DB_PASSWORD.get_secret_value()}@"
-                f"{self.DB_HOST}:{self.DB_PORT}/"
-                f"{self.DB_NAME}")
+        return (
+            f"postgresql+asyncpg://"
+            f"{self.DB_USER}:"
+            f"{self.DB_PASSWORD.get_secret_value()}@"
+            f"{self.DB_HOST}:{self.DB_PORT}/"
+            f"{self.DB_NAME}"
+        )
 
 
 settings = Settings()

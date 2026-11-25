@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: task_parser
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # .env в репозитории нет — Settings читает переменные окружения; токен фиктивный (Telegram в тестах замокан)
+    env:
+      BOT_TOKEN: "123456:ci-dummy-token"
+      DB_NAME: task_parser
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: localhost
+      DB_PORT: 5432
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      SYNC_IN_MIN: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pip install "poetry==2.4.3"
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: isort
+        run: poetry run isort --check-only --diff src tests
+
+      - name: black
+        run: poetry run black --check src tests
+
+      - name: flake8
+        run: poetry run flake8 src tests
+
+      - name: mypy
+        run: poetry run mypy src
+
+      - name: pytest
+        run: poetry run pytest --cov=src --cov-report=term-missing --cov-fail-under=75
